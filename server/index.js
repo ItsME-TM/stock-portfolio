@@ -20,6 +20,19 @@ const upload = multer({ dest: '/tmp/uploads/' });
 
 let db;
 
+// Middleware: Ensure database is connected before processing API requests
+app.use((req, res, next) => {
+  if (!req.url.startsWith('/api')) {
+    return next();
+  }
+  if (!db) {
+    return res.status(503).json({ 
+      error: 'Database is currently offline or connecting. Please ensure DB_HOST and database connection credentials are correctly configured.' 
+    });
+  }
+  next();
+});
+
 // Retry connection to MySQL database to handle slow startup in Docker Compose
 async function connectDB() {
   const dbConfig = {
@@ -500,9 +513,9 @@ app.get('*', (req, res) => {
   }
 });
 
-// Start backend server
-connectDB().then(() => {
-  app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-  });
+// Start backend server immediately to satisfy health checks and port bindings
+app.listen(port, () => {
+  console.log(`Server is running on port ${port}`);
+  // Connect to DB asynchronously in the background to prevent blocking startup
+  connectDB();
 });
