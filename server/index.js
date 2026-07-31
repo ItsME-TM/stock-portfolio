@@ -57,6 +57,20 @@ async function connectDB() {
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
+
+      // Auto-create stocks table if it does not exist
+      await db.execute(`
+        CREATE TABLE IF NOT EXISTS stocks (
+          id INT AUTO_INCREMENT PRIMARY KEY,
+          symbol VARCHAR(50) NOT NULL UNIQUE,
+          quantity INT NOT NULL,
+          total_invested DECIMAL(10,2) NOT NULL,
+          sector VARCHAR(100) NOT NULL,
+          status ENUM('Good', 'Bad', 'Neutral') DEFAULT 'Neutral',
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+      `);
       
       break;
     } catch (err) {
