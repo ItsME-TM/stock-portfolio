@@ -669,22 +669,40 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-[#e9e4db] claude-header-glass py-4 px-4 md:px-6 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="p-2.5 bg-[#cc5a37]/10 text-[#cc5a37] rounded-xl border border-[#cc5a37]/20 shadow-sm">
-            <TrendingUp className="w-6 h-6" />
+      <header className="sticky top-0 z-40 border-b border-[#e9e4db] claude-header-glass py-3 px-4 md:px-6 flex flex-col md:flex-row items-center justify-between gap-3 md:gap-4">
+        {/* Mobile Row 1: Logo (Left) + User Profile / Logout (Right) */}
+        <div className="flex items-center justify-between w-full md:w-auto">
+          <div className="flex items-center gap-2.5">
+            <div className="p-1.5 bg-[#cc5a37]/10 text-[#cc5a37] rounded-lg border border-[#cc5a37]/20 shadow-sm">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-lg font-bold tracking-tight text-slate-900 leading-tight">StellarVest</h1>
+              <p className="hidden md:block text-xs text-slate-500 font-medium mt-0.5">Sri Lankan Stock Portfolio Tracker</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">StellarVest</h1>
-            <p className="text-xs text-slate-500 font-medium">Sri Lankan Stock Portfolio Tracker</p>
+          
+          {/* Mobile Profile & Logout Controls */}
+          <div className="flex items-center gap-2.5 md:hidden">
+            <div className="flex flex-col text-right">
+              <span className="text-xs font-bold text-slate-750">{username}</span>
+              <span className="text-[8px] text-emerald-650 font-bold uppercase tracking-wider">Active</span>
+            </div>
+            <button 
+              onClick={handleLogout}
+              className="p-1.5 border border-slate-200 hover:bg-slate-50 text-slate-500 hover:text-rose-600 rounded-lg transition shadow-sm"
+              title="Sign Out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
         </div>
         
-        {/* Middle Navigation Tabs */}
+        {/* Mobile Row 2: Centered Navigation Tabs */}
         <div className="flex items-center justify-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200 w-full md:w-auto overflow-x-auto no-scrollbar">
           <button 
             onClick={() => setActiveTab('dashboard')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 flex-shrink-0 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 flex-shrink-0 ${
               activeTab === 'dashboard' 
                 ? 'bg-[#cc5a37] text-white shadow-sm' 
                 : 'text-slate-650 hover:text-slate-900 hover:bg-slate-200/50'
@@ -694,7 +712,7 @@ export default function App() {
           </button>
           <button 
             onClick={() => setActiveTab('portfolio')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 flex-shrink-0 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 flex-shrink-0 ${
               activeTab === 'portfolio' 
                 ? 'bg-[#cc5a37] text-white shadow-sm' 
                 : 'text-slate-650 hover:text-slate-900 hover:bg-slate-200/50'
@@ -704,7 +722,7 @@ export default function App() {
           </button>
           <button 
             onClick={() => setActiveTab('backup')}
-            className={`px-4 py-2 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 flex-shrink-0 ${
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold tracking-wide transition-all duration-200 flex-shrink-0 ${
               activeTab === 'backup' 
                 ? 'bg-[#cc5a37] text-white shadow-sm' 
                 : 'text-slate-650 hover:text-slate-900 hover:bg-slate-200/50'
@@ -714,9 +732,9 @@ export default function App() {
           </button>
         </div>
 
-        {/* Right User Logout */}
-        <div className="flex items-center justify-between md:justify-end gap-3 w-full md:w-auto border-t border-slate-100 md:border-t-0 pt-3 md:pt-0">
-          <div className="flex flex-col text-left md:text-right">
+        {/* Desktop Profile & Logout (Hidden on mobile) */}
+        <div className="hidden md:flex items-center justify-end gap-3 w-full md:w-auto">
+          <div className="flex flex-col text-right">
             <span className="text-xs font-bold text-slate-700 leading-tight">{username}</span>
             <span className="text-[9px] text-emerald-600 font-bold tracking-wide uppercase mt-0.5">Active Session</span>
           </div>
