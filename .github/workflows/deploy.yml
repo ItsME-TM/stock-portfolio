@@ -1,0 +1,42 @@
+name: Build, Push and Deploy
+
+on:
+  push:
+    branches:
+      - main # Triggers the workflow when pushing to the main branch
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # Step 1: Checkout repository files
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Docker Buildx (for advanced build features)
+      - name: Set up Docker Buildx
+        uses: actions/setup-buildx-action@v3
+
+      # Step 3: Authenticate with Docker Hub using Github Secrets
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Step 4: Build the multi-stage image and push it to Docker Hub
+      - name: Build and Push Docker Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          # Replace 'your-dockerhub-username' with your actual Docker Hub username
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/stellarvest:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/stellarvest:${{ github.sha }}
+
+      # Step 5: Trigger Render Web Service Deployment using Render Deploy Hook
+      - name: Trigger Render Deploy Hook
+        run: |
+          curl -X GET "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"
