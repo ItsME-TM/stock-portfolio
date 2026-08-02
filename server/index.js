@@ -39,20 +39,22 @@ async function connectDB() {
   let poolConfig;
 
   if (connectionString) {
+    // Enable SSL with rejectUnauthorized: false for cloud DBs (Neon, Render, etc.) if not on localhost
+    const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
     poolConfig = {
       connectionString,
-      ssl: connectionString.includes('neon.tech') ? { rejectUnauthorized: false } : false
+      ssl: isLocal ? false : { rejectUnauthorized: false }
     };
   } else {
     const host = process.env.DB_HOST || 'localhost';
-    const isNeon = host.endsWith('neon.tech');
+    const isLocal = host === 'localhost' || host === '127.0.0.1';
     poolConfig = {
       host,
       port: parseInt(process.env.DB_PORT, 10) || 5432,
       user: process.env.DB_USER || 'postgres',
       password: process.env.DB_PASSWORD || 'password',
       database: process.env.DB_NAME || 'portfolio_db',
-      ssl: isNeon ? { rejectUnauthorized: false } : false
+      ssl: isLocal ? false : { rejectUnauthorized: false }
     };
   }
 
@@ -209,8 +211,9 @@ app.post('/api/auth/register', async (req, res) => {
     }
 
     // Restrict registration if an admin has already been set up
-    const [[countResult]] = await db.execute('SELECT COUNT(*) as count FROM users');
-    if (countResult.count > 0) {
+    const { rows } = await db.query('SELECT COUNT(*) as count FROM users');
+    const countResult = rows[0] || { count: 0 };
+    if (parseInt(countResult.count, 10) > 0) {
       return res.status(400).json({ error: 'Admin account has already been initialized' });
     }
 
