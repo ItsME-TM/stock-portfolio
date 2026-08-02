@@ -20,7 +20,7 @@ StellarVest is a premium, mobile-responsive, full-stack stock portfolio tracking
 
 - **Frontend**: React (Vite), Tailwind CSS v3, Recharts, Lucide Icons
 - **Backend**: Node.js, Express.js, JWT (`jsonwebtoken`), Bcrypt (`bcryptjs`)
-- **Database**: MySQL 8.0
+- **Database**: PostgreSQL / Neon DB
 - **DevOps**: Docker, Docker Compose, GitHub Actions, Render
 
 ---
@@ -42,7 +42,7 @@ stock_portfolio/
 │   ├── index.js              # Database routing & auth controller
 │   └── package.json
 ├── Dockerfile                # Multi-stage production container build
-├── docker-compose.yml        # Multi-container orchestration (App + MySQL)
+├── docker-compose.yml        # Multi-container orchestration (App + PostgreSQL)
 ├── init.sql                  # Automated database initializer
 ├── restore.sql               # Seed query containing sample portfolio records
 └── .gitignore                # Security parameters excluding personal data
@@ -71,7 +71,7 @@ If you prefer to run the components independently on your host machine:
 
 ### Prerequisites
 - Node.js (v18+)
-- MySQL Server (running on port `3306` or `3307`)
+- PostgreSQL Server (running on port `5432`) or a Neon DB instance
 
 ### 1. Database Setup
 Create a database named `portfolio_db` and run the queries inside [init.sql](file:///D:/Programmes/stock_portfolio/init.sql) or import [restore.sql](file:///D:/Programmes/stock_portfolio/restore.sql).
@@ -87,10 +87,7 @@ Create a database named `portfolio_db` and run the queries inside [init.sql](fil
    ```
 3. Set environment variables (or configure a local `.env` file):
    ```text
-   DB_HOST=localhost
-   DB_USER=root
-   DB_PASSWORD=your_mysql_password
-   DB_NAME=portfolio_db
+   DATABASE_URL=postgresql://postgres:password@localhost:5432/portfolio_db
    PORT=5000
    ```
 4. Start the server:

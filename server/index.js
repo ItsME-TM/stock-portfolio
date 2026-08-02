@@ -1,6 +1,6 @@
 const express = require('express');
 const cors = require('cors');
-const mysql = require('mysql2/promise');
+const { Pool } = require('pg');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -33,25 +33,40 @@ app.use((req, res, next) => {
   next();
 });
 
-// Retry connection to MySQL database to handle slow startup in Docker Compose
+// Retry connection to PostgreSQL database to handle slow startup in Docker Compose
 async function connectDB() {
-  const dbConfig = {
-    host: process.env.DB_HOST || 'localhost',
-    port: parseInt(process.env.DB_PORT, 10) || 3306,
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || 'password',
-    database: process.env.DB_NAME || 'portfolio_db',
-  };
+  const connectionString = process.env.DATABASE_URL;
+  let poolConfig;
+
+  if (connectionString) {
+    poolConfig = {
+      connectionString,
+      ssl: connectionString.includes('neon.tech') ? { rejectUnauthorized: false } : false
+    };
+  } else {
+    const host = process.env.DB_HOST || 'localhost';
+    const isNeon = host.endsWith('neon.tech');
+    poolConfig = {
+      host,
+      port: parseInt(process.env.DB_PORT, 10) || 5432,
+      user: process.env.DB_USER || 'postgres',
+      password: process.env.DB_PASSWORD || 'password',
+      database: process.env.DB_NAME || 'portfolio_db',
+      ssl: isNeon ? { rejectUnauthorized: false } : false
+    };
+  }
 
   while (true) {
     try {
-      db = await mysql.createConnection(dbConfig);
-      console.log('Successfully connected to MySQL database!');
+      db = new Pool(poolConfig);
+      // Verify connectivity
+      await db.query('SELECT 1');
+      console.log('Successfully connected to PostgreSQL database!');
       
       // Auto-create users table if it does not exist (migrating from previous runs)
-      await db.execute(`
+      await db.query(`
         CREATE TABLE IF NOT EXISTS users (
-          id INT AUTO_INCREMENT PRIMARY KEY,
+          id SERIAL PRIMARY KEY,
           username VARCHAR(50) NOT NULL UNIQUE,
           password VARCHAR(255) NOT NULL,
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -59,22 +74,22 @@ async function connectDB() {
       `);
 
       // Auto-create stocks table if it does not exist
-      await db.execute(`
+      await db.query(`
         CREATE TABLE IF NOT EXISTS stocks (
-          id INT AUTO_INCREMENT PRIMARY KEY,
+          id SERIAL PRIMARY KEY,
           symbol VARCHAR(50) NOT NULL UNIQUE,
           quantity INT NOT NULL,
           total_invested DECIMAL(10,2) NOT NULL,
           sector VARCHAR(100) NOT NULL,
-          status ENUM('Good', 'Bad', 'Neutral') DEFAULT 'Neutral',
+          status VARCHAR(20) DEFAULT 'Neutral' CHECK (status IN ('Good', 'Bad', 'Neutral')),
           created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);
       
       break;
     } catch (err) {
-      console.log('MySQL connection failed, retrying in 3 seconds...', err.message);
+      console.log('PostgreSQL connection failed, retrying in 3 seconds...', err.message);
       await new Promise(resolve => setTimeout(resolve, 3050));
     }
   }
@@ -175,8 +190,9 @@ function authenticateToken(req, res, next) {
 // GET /api/auth/status - Check if any user accounts are registered
 app.get('/api/auth/status', async (req, res) => {
   try {
-    const [[result]] = await db.execute('SELECT COUNT(*) as count FROM users');
-    res.json({ registered: result.count > 0 });
+    const { rows } = await db.query('SELECT COUNT(*) as count FROM users');
+    const result = rows[0] || { count: 0 };
+    res.json({ registered: parseInt(result.count, 10) > 0 });
   } catch (error) {
     console.error('Error fetching auth status:', error);
     res.status(500).json({ error: 'Database verification failed' });
@@ -202,8 +218,8 @@ app.post('/api/auth/register', async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password.trim(), salt);
 
-    await db.execute(
-      'INSERT INTO users (username, password) VALUES (?, ?)',
+    await db.query(
+      'INSERT INTO users (username, password) VALUES ($1, $2)',
       [username.trim(), hashedPassword]
     );
 
@@ -223,7 +239,7 @@ app.post('/api/auth/login', async (req, res) => {
       return res.status(450).json({ error: 'Username and password are required' });
     }
 
-    const [users] = await db.execute('SELECT * FROM users WHERE username = ?', [username.trim()]);
+    const { rows: users } = await db.query('SELECT * FROM users WHERE username = $1', [username.trim()]);
     if (users.length === 0) {
       return res.status(400).json({ error: 'Invalid username or password' });
     }
@@ -259,11 +275,11 @@ app.get('/api/stocks', authenticateToken, async (req, res) => {
     let params = [];
 
     if (sector) {
-      query = 'SELECT * FROM stocks WHERE sector = ? ORDER BY symbol ASC';
+      query = 'SELECT * FROM stocks WHERE sector = $1 ORDER BY symbol ASC';
       params = [sector];
     }
 
-    const [rows] = await db.execute(query, params);
+    const { rows } = await db.query(query, params);
     res.json(rows);
   } catch (error) {
     console.error('Error fetching stocks:', error);
@@ -287,15 +303,16 @@ app.post('/api/stocks', authenticateToken, async (req, res) => {
 
     const sql = `
       INSERT INTO stocks (symbol, quantity, total_invested, sector, status)
-      VALUES (?, ?, ?, ?, ?)
-      ON DUPLICATE KEY UPDATE
-        quantity = VALUES(quantity),
-        total_invested = VALUES(total_invested),
-        sector = VALUES(sector),
-        status = VALUES(status)
+      VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (symbol) DO UPDATE SET
+        quantity = EXCLUDED.quantity,
+        total_invested = EXCLUDED.total_invested,
+        sector = EXCLUDED.sector,
+        status = EXCLUDED.status
+      RETURNING id
     `;
 
-    const [result] = await db.execute(sql, [
+    const { rows } = await db.query(sql, [
       trimmedSymbol,
       parseInt(quantity, 10),
       parseFloat(total_invested),
@@ -303,7 +320,7 @@ app.post('/api/stocks', authenticateToken, async (req, res) => {
       finalStatus
     ]);
 
-    res.status(201).json({ message: 'Stock added/updated successfully', id: result.insertId });
+    res.status(201).json({ message: 'Stock added/updated successfully', id: rows[0]?.id });
   } catch (error) {
     console.error('Error adding stock:', error);
     res.status(500).json({ error: 'Failed to add stock' });
@@ -326,11 +343,11 @@ app.put('/api/stocks/:id', authenticateToken, async (req, res) => {
 
     const sql = `
       UPDATE stocks 
-      SET symbol = ?, quantity = ?, total_invested = ?, sector = ?, status = ?
-      WHERE id = ?
+      SET symbol = $1, quantity = $2, total_invested = $3, sector = $4, status = $5
+      WHERE id = $6
     `;
 
-    const [result] = await db.execute(sql, [
+    const resQuery = await db.query(sql, [
       trimmedSymbol,
       parseInt(quantity, 10),
       parseFloat(total_invested),
@@ -339,7 +356,7 @@ app.put('/api/stocks/:id', authenticateToken, async (req, res) => {
       id
     ]);
 
-    if (result.affectedRows === 0) {
+    if (resQuery.rowCount === 0) {
       return res.status(404).json({ error: 'Stock not found' });
     }
 
@@ -354,9 +371,9 @@ app.put('/api/stocks/:id', authenticateToken, async (req, res) => {
 app.delete('/api/stocks/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const [result] = await db.execute('DELETE FROM stocks WHERE id = ?', [id]);
+    const resQuery = await db.query('DELETE FROM stocks WHERE id = $1', [id]);
     
-    if (result.affectedRows === 0) {
+    if (resQuery.rowCount === 0) {
       return res.status(404).json({ error: 'Stock not found' });
     }
 
@@ -371,15 +388,16 @@ app.delete('/api/stocks/:id', authenticateToken, async (req, res) => {
 app.get('/api/summary', authenticateToken, async (req, res) => {
   try {
     // 1. Total Investment Sum & Total Stocks Count
-    const [[totals]] = await db.execute(`
+    const { rows: totalsRows } = await db.query(`
       SELECT 
-        COALESCE(SUM(total_invested), 0) as totalInvestment,
-        COUNT(*) as totalStocks
+        COALESCE(SUM(total_invested), 0) as "totalInvestment",
+        COUNT(*)::int as "totalStocks"
       FROM stocks
     `);
+    const totals = totalsRows[0] || { totalInvestment: 0, totalStocks: 0 };
 
     // 2. Sector distributions for Pie Chart
-    const [sectors] = await db.execute(`
+    const { rows: sectors } = await db.query(`
       SELECT 
         sector as name,
         COALESCE(SUM(total_invested), 0) as value
@@ -389,7 +407,7 @@ app.get('/api/summary', authenticateToken, async (req, res) => {
     `);
 
     // 3. Top 5 stocks by total invested for Bar Chart
-    const [topStocks] = await db.execute(`
+    const { rows: topStocks } = await db.query(`
       SELECT 
         symbol as name,
         total_invested as value
@@ -413,7 +431,7 @@ app.get('/api/summary', authenticateToken, async (req, res) => {
 // GET /api/export - Export stocks database as CSV file
 app.get('/api/export', authenticateToken, async (req, res) => {
   try {
-    const [rows] = await db.execute('SELECT symbol, quantity, total_invested, sector, status FROM stocks ORDER BY symbol ASC');
+    const { rows } = await db.query('SELECT symbol, quantity, total_invested, sector, status FROM stocks ORDER BY symbol ASC');
     
     let csvContent = 'Security,Quantity,Total Cost,Sector,Status\n';
     
@@ -491,15 +509,15 @@ app.post('/api/import', authenticateToken, upload.single('file'), async (req, re
       // Perform Upsert
       const upsertSql = `
         INSERT INTO stocks (symbol, quantity, total_invested, sector, status)
-        VALUES (?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          quantity = VALUES(quantity),
-          total_invested = VALUES(total_invested),
-          sector = CASE WHEN VALUES(sector) = 'Other' THEN stocks.sector ELSE VALUES(sector) END,
-          status = CASE WHEN VALUES(status) = 'Neutral' THEN stocks.status ELSE VALUES(status) END
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (symbol) DO UPDATE SET
+          quantity = EXCLUDED.quantity,
+          total_invested = EXCLUDED.total_invested,
+          sector = CASE WHEN EXCLUDED.sector = 'Other' THEN stocks.sector ELSE EXCLUDED.sector END,
+          status = CASE WHEN EXCLUDED.status = 'Neutral' THEN stocks.status ELSE EXCLUDED.status END
       `;
 
-      await db.execute(upsertSql, [symbol, quantity, totalInvested, csvSector, status]);
+      await db.query(upsertSql, [symbol, quantity, totalInvested, csvSector, status]);
       insertCount++;
     }
 
